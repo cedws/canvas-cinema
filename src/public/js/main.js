@@ -45,9 +45,10 @@ class World {
         this.keyState = [];
         this.keyStateChanged = false;
 
-        window.addEventListener('keydown', this.keyDown.bind(this), false);
-        window.addEventListener('keyup', this.keyUp.bind(this), false);
-        window.addEventListener('resize', this.resize.bind(this), false);
+        this.domCanvas.addEventListener('keydown', this.keyDown.bind(this), false);
+        this.domCanvas.addEventListener('keyup', this.keyUp.bind(this), false);
+        this.domCanvas.addEventListener('focusout', this.blur.bind(this), false);
+        this.domCanvas.addEventListener('resize', this.resize.bind(this), false);
     }
 
     onMessage(evt) {
@@ -131,6 +132,10 @@ class World {
 
     resize() {
         this.updateVideoDimensions();
+    }
+
+    blur() {
+        this.keyState = [];
     }
 
     updateVideoDimensions() {
