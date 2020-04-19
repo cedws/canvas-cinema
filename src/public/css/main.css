@@ -1,0 +1,33 @@
+body {
+    margin: 0;
+    font-family: monospace;
+    font-size: 15px;
+}
+
+#cinema-canvas {
+    position: fixed;
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    z-index: 2;
+}
+
+#cinema-screen {
+    text-align: center;
+    position: fixed;
+    z-index: 1;
+    width: 100vw;
+    height: 100vh;
+}
+
+#cinema-video {
+    border: 3px solid;
+}
+
+#stats {
+    text-align: center;
+    position: fixed;
+    bottom: 5px;
+    right: 5px;
+    width: 100vw;
+}
