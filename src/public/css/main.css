@@ -23,11 +23,3 @@ body {
 #cinema-video {
     border: 3px solid;
 }
-
-#stats {
-    text-align: center;
-    position: fixed;
-    bottom: 5px;
-    right: 5px;
-    width: 100vw;
-}

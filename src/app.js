@@ -20,9 +20,10 @@ const KEYS = {
 };
 
 const EVENT = {
-    UUID: 0x1,
-    POSITION: 0x2,
-    LEAVE: 0x3,
+    KEYS: 0x1,
+    UUID: 0x2,
+    POSITION: 0x3,
+    LEAVE: 0x4,
 };
 
 class Vector {
@@ -48,33 +49,32 @@ class Player {
         this.keyState = [];
         this.position = new Vector(0, 0);
         this.velocity = new Vector(0, 0);
-        this.setSkin(1, false, false);
+        this.updateSkin(1);
     }
 
-    setSkin(direction, falling, jumping) {
+    updateSkin(direction) {
         this.direction = direction;
-        this.jumping = jumping;
 
-        if(falling) {
+        const verb = () => {
+            if(this.falling)
+                return 'Fall';
+            if(this.jumping)
+                return 'Jump';
+            if(this.walking)
+                return 'Walk';
+            return 'Idle';
+        };
+
+        const dir = () => {
             if(this.direction == 1)
-                this.skin = 'fFallRight';
+                return 'Right';
             if(this.direction == -1)
-                this.skin = 'fFallLeft';
-            return;
-        }
+                return 'Left';
+        };
 
-        if(jumping) {
-            if(this.direction == 1)
-                this.skin = 'fJumpRight';
-            if(this.direction == -1)
-                this.skin = 'fJumpLeft';
-            return;
-        } 
+        const variant = `${(Math.round(Math.abs(this.position.x) / 50) % 3) + 1}`;
 
-        if(this.direction == 1)
-            this.skin = 'fIdleRight';
-        if(this.direction == -1)
-            this.skin = 'fIdleLeft';
+        this.skin = `f${verb()}${dir()}${this.walking ? variant : ""}`;
     }
 }
 
@@ -86,12 +86,20 @@ wss.on('connection', ws => {
     const player = new Player(ws.uuid);
     players.set(ws.uuid, player);
 
-    ws.on('message', message => {
-        const { keyState } = JSON.parse(message);
-        const player = players.get(ws.uuid);
+    ws.on('message', evt => {
+        const data = JSON.parse(evt);
+        const { event } = data;
 
-        if(player)
-            player.keyState = keyState;
+        switch(event) {
+            case EVENT.KEYS:
+                const { keyState } = data;
+                const player = players.get(ws.uuid);
+
+                if(player)
+                    player.keyState = keyState;
+
+                break;
+        }
     });
 
     ws.on('close', () => {
@@ -118,12 +126,12 @@ wss.on('connection', ws => {
         uuid: ws.uuid,
     }));
 
-    players.forEach(({ uuid, skin, position }) => {
+    {
         const data = JSON.stringify({
             event: EVENT.POSITION,
-            uuid,
-            skin,
-            position,
+            uuid: player.uuid,
+            skin: player.skin,
+            position: player.position,
         });
 
         for(const client of wss.clients) {
@@ -134,7 +142,18 @@ wss.on('connection', ws => {
                 continue;
 
             client.send(data);
-        }   
+        }
+    }
+
+    players.forEach(({ uuid, skin, position }) => {
+        const data = JSON.stringify({
+            event: EVENT.POSITION,
+            uuid,
+            skin,
+            position,
+        });
+
+        ws.send(data);
     });
 });
 
@@ -143,29 +162,36 @@ function update() {
     const updated = [];
 
     players.forEach(player => {
-        const original = Object.assign({}, player);
-
-        if(player.position.y == 0) {
-            player.setSkin(player.direction, false, false);
-        }
+        const prev = {
+            skin: player.skin,
+            x: player.position.x,
+            y: player.position.y,
+        };
 
         const falling = player.velocity.y > 0 && player.position.y != 0;
-        player.setSkin(player.direction, falling, player.jumping);
+        const jumping = player.keyState.includes(KEYS.UP) || (player.velocity.y < 0 && player.position.y != 0);
 
-        if(player.keyState.includes(KEYS.LEFT)) {
-            player.setSkin(1, falling, player.jumping);
-            player.velocity.x = 10;
-        }
-        if(player.keyState.includes(KEYS.RIGHT)) {
-            player.setSkin(-1, falling, player.jumping);
-            player.velocity.x = -10;
-        }
+        player.falling = falling;
+        player.jumping = jumping;
+
         if(player.keyState.includes(KEYS.UP)) {
             // Only allow player to jump if they're on the floor
             if(player.position.y == 0) {
-                player.setSkin(player.direction, false, true);
                 player.velocity.y = -10;
             }
+        }
+
+        if(player.keyState.includes(KEYS.LEFT)) {
+            player.walking = !falling && !jumping;
+            player.direction = 1
+            player.velocity.x = 10;
+        } else if(player.keyState.includes(KEYS.RIGHT)) {
+            player.walking = !falling && !jumping;
+            player.direction = -1;
+            player.velocity.x = -10;
+        } else {
+            player.walking = false;
+            player.idle = !player.keyState.includes(KEYS.UP) && !falling && !jumping;
         }
 
         // Gravity
@@ -183,11 +209,13 @@ function update() {
         player.position.x = Math.round(player.position.x);
         player.position.y = Math.round(player.position.y);
 
-        // Check if player data has updated
-        if(player.skin != original.skin ||
-                player.position.x != original.x || 
-                player.position.y != original.y)
+        player.updateSkin(player.direction);
+
+        if(player.position.x != prev.x || player.position.y != prev.y) {
             updated.push(player);
+        } else if(player.skin != prev.skin) {
+            updated.push(player);
+        }
     });
 
     for(const { uuid, skin, position } of updated) {

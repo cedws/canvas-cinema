@@ -7,9 +7,10 @@ const KEYS = {
 };
 
 const EVENT = {
-    UUID: 0x1,
-    POSITION: 0x2,
-    LEAVE: 0x3,
+    KEYS: 0x1,
+    UUID: 0x2,
+    POSITION: 0x3,
+    LEAVE: 0x4,
 };
 
 class Vector {
@@ -29,29 +30,32 @@ class Vector {
     }
 }
 
-class World {
-    constructor(ws) {
-        this.domVideo = document.querySelector('#cinema-screen');
-        this.domVideoDimensions = {};
-
-        this.updateVideoDimensions();
-
-        this.ws = ws;
-        this.ws.addEventListener('message', this.onMessage.bind(this))
-
-        this.players = new Map();
-        this.player = new Player();
-
-        this.keyState = [];
-        this.keyStateChanged = false;
-
-        this.domCanvas.addEventListener('keydown', this.keyDown.bind(this), false);
-        this.domCanvas.addEventListener('keyup', this.keyUp.bind(this), false);
-        this.domCanvas.addEventListener('focusout', this.blur.bind(this), false);
-        this.domCanvas.addEventListener('resize', this.resize.bind(this), false);
+class Screen {
+    constructor(selector) {
+        this.element = document.querySelector(selector);
     }
 
-    onMessage(evt) {
+    update(player) {
+        const top = -player.position.y;
+        const left = -player.position.x;
+
+        this.element.style.top = `${top}px`;
+        this.element.style.left = `${left}px`;
+    }
+}
+
+class World {
+    constructor(screen, ws) {
+        this.screen = screen;
+
+        this.ws = ws;
+        this.ws.addEventListener('message', this.message.bind(this));
+
+        this.players = new Map();
+        this.player = new LocalPlayer();
+    }
+
+    message(evt) {
         const data = JSON.parse(evt.data);
         const { event } = data;
 
@@ -82,12 +86,15 @@ class World {
         let player;
 
         if(uuid == this.uuid) {
+            // LocalPlayer's position has updated
             player = this.player;
+            // Update screen position as well
+            this.screen.update(this.player);
         } else {
             if(this.players.has(uuid)) {
                 player = this.players.get(uuid);
             } else {
-                player = new OnlinePlayer();
+                player = new OnlinePlayer(this.player);
                 this.players.set(uuid, player);
             }
         }
@@ -100,71 +107,20 @@ class World {
         this.players.delete(uuid);
     }
 
-    keyDown(evt) {
-        evt.preventDefault();
-
-        switch(evt.keyCode) {
-            case KEYS.UP:
-            case KEYS.LEFT:
-            case KEYS.RIGHT:
-                if(!this.keyState.includes(evt.keyCode)) {
-                    this.keyState.push(evt.keyCode);
-                    this.keyStateChanged = true;
-                }
-                break;
-        }
-    }
-
-    keyUp(evt) {
-        evt.preventDefault();
-
-        switch(evt.keyCode) {
-            case KEYS.UP:
-            case KEYS.LEFT:
-            case KEYS.RIGHT:
-                if(this.keyState.includes(evt.keyCode)) {
-                    this.keyState = this.keyState.filter(k => k != evt.keyCode)
-                    this.keyStateChanged = true;
-                }
-                break;
-        }
-    }
-
-    resize() {
-        this.updateVideoDimensions();
-    }
-
-    blur() {
-        this.keyState = [];
-    }
-
-    updateVideoDimensions() {
-        this.domVideoDimensions = this.domVideo.getBoundingClientRect();
-    }
-
     render(ctx) {
-        const top = -this.player.position.y;
-        const left = (window.innerWidth / 2) - (this.domVideoDimensions.width / 2) - this.player.position.x;
-
-        this.domVideo.style.top = `${top}px`;
-        this.domVideo.style.left = `${left}px`;
-
-        ctx.clearRect(-(window.innerWidth / 2), -(window.innerHeight / 2), window.innerWidth, window.innerHeight);
-
-        if(this.keyStateChanged) {
+        if(this.player.keyStateChanged) {
             this.sendMessage({
-                keyState: this.keyState,
+                event: EVENT.KEYS,
+                keyState: this.player.keyState,
             });
-            this.keyStateChanged = false;
+            this.player.keyStateChanged = false;
         }
 
-        document.querySelector('#stats').innerText = `X: ${this.player.position.x} / Y: ${this.player.position.y}`;
+        ctx.clearRect(-ctx.canvas.width / 2, -ctx.canvas.height / 2, ctx.canvas.width, ctx.canvas.height);
 
-        this.players.forEach(player => {
-            player.render(ctx, this.player);
-        });
-
-        this.player.render(ctx)
+        // TODO: Don't clear the canvas/redraw more than necessary
+        this.players.forEach(player => player.render(ctx));
+        this.player.render(ctx);
     }
 }
 
@@ -179,7 +135,7 @@ class Player {
         ];
 
         const assetLoad = assetsList.map(asset => {
-            new Promise((res, rej) => {
+            return new Promise((res, rej) => {
                 Player.assets[asset] = new Image();
                 Player.assets[asset].src = `img/${asset}.png`;
                 Player.assets[asset].onload = res;
@@ -202,51 +158,100 @@ class Player {
         const width = Player.assets[this.skin].width;
         const height = Player.assets[this.skin].height;
 
-        const x = -(width / 2);//this.position.x - (width / 2);
-        const y = -(height / 2)//this.position.y;
+        const x = -width / 2;
+        const y = -height / 2;
 
         ctx.drawImage(Player.assets[this.skin], x, y, width, height);
     }
 }
 
+class LocalPlayer extends Player {
+    constructor() {
+        super();
+
+        this.keyState = [];
+        this.keyStateChanged = false;
+
+        window.addEventListener('keydown', this.keyDown.bind(this));
+        window.addEventListener('keyup', this.keyUp.bind(this));
+        window.addEventListener('focusout', this.focusOut.bind(this));
+    }
+
+    keyDown(evt) {
+        switch(evt.keyCode) {
+            case KEYS.UP:
+            case KEYS.LEFT:
+            case KEYS.RIGHT:
+                if(!this.keyState.includes(evt.keyCode)) {
+                    evt.preventDefault();
+                    this.keyState.push(evt.keyCode);
+                    this.keyStateChanged = true;
+                }
+                break;
+        }
+    }
+
+    keyUp(evt) {
+        switch(evt.keyCode) {
+            case KEYS.UP:
+            case KEYS.LEFT:
+            case KEYS.RIGHT:
+                if(this.keyState.includes(evt.keyCode)) {
+                    evt.preventDefault();
+                    this.keyState = this.keyState.filter(k => k != evt.keyCode)
+                    this.keyStateChanged = true;
+                }
+                break;
+        }
+    }
+
+    focusOut() {
+        this.keyState = [];
+        this.keyStateChanged = true;
+    }
+}
+
 class OnlinePlayer extends Player {
-    render(ctx, { position }) {
+    constructor(relative) {
+        super();
+        // The player that this OnlinePlayer should be drawn relative to
+        this.relative = relative;
+    }
+
+    render(ctx) {
         const width = Player.assets[this.skin].width;
         const height = Player.assets[this.skin].height;
 
         // Offset this OnlinePlayer's position by the main player's position
-        const x = this.position.x - (width / 2) - position.x;
-        const y = this.position.y - (height / 2) - position.y;
-
-        console.log({ x, y });
+        const x = this.position.x - (width / 2) - this.relative.position.x;
+        const y = this.position.y - (height / 2) - this.relative.position.y;
 
         ctx.drawImage(Player.assets[this.skin], x, y, width, height);
     }
 }
 
 class Canvas {
-    constructor() {
-        this.domcanvas = document.querySelector('#cinema-canvas');
-        this.domcanvas = ('OffscreenCanvas' in window) ? 
-            this.domcanvas.transferControlToOffscreen() : this.domcanvas;
+    constructor(selector) {
+        let element = document.querySelector(selector);
 
-        this.ctx = this.domcanvas.getContext('2d', { antialias: false });
+        if('OffscreenCanvas' in window)
+            element = element.transferControlToOffscreen();
+
+        this.ctx = element.getContext('2d', { antialias: false });
+        this.ctx.imageSmoothingEnabled = false;
+
         this.canvas = this.ctx.canvas;
 
-        window.addEventListener('resize', this.resize.bind(this), false);
+        window.addEventListener('resize', this.resize.bind(this));
 
-        this.init();
+        this.resize();
     }
 
     resize() {
-        this.init();
-    }
-
-    init() {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
 
-        this.ctx.translate(window.innerWidth / 2, window.innerHeight / 2);
+        this.ctx.translate(this.canvas.width / 2, this.canvas.height / 2);
         this.ctx.imageSmoothingEnabled = false;
 
         return this.ctx;
@@ -254,12 +259,13 @@ class Canvas {
 }
 
 (async function init() {
-    const { ctx } = new Canvas();
-
     await Player.loadAssets();
 
     const ws = new WebSocket(`ws://${window.location.hostname}:8081`);
-    const world = new World(ws);
+
+    const { ctx } = new Canvas('#cinema-canvas');
+    const screen = new Screen('#cinema-screen');
+    const world = new World(screen, ws);
 
     let raf;
 
