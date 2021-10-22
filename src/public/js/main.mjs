@@ -108,10 +108,8 @@ class World {
         ctx.clearRect(-ctx.canvas.width / 2, -ctx.canvas.height / 2, ctx.canvas.width, ctx.canvas.height);
         this.player.render(ctx);
 
-        ctx.save();
         this.renderFloor(ctx);
         this.players.forEach(player => player.render(ctx));
-        ctx.restore();
 
         // TODO: Don't clear the canvas/redraw more than necessary
     }
