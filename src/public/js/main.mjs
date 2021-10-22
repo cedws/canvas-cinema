@@ -1,17 +1,6 @@
 'use strict';
 
-const KEYS = {
-    UP: 38,
-    LEFT: 39,
-    RIGHT: 37,
-};
-
-const EVENT = {
-    KEYS: 0x1,
-    UUID: 0x2,
-    POSITION: 0x3,
-    LEAVE: 0x4,
-};
+import { KEYS, EVENTS, ASSET_SCALE_FACTOR, ASSET_PLAYER_IDLE_RIGHT, ASSETS } from './consts.mjs';
 
 class Vector {
     constructor(x, y) {
@@ -60,13 +49,13 @@ class World {
         const { event } = data;
 
         switch(event) {
-            case EVENT.UUID:
+            case EVENTS.UUID:
                 this.eventUUID(data);
                 break;
-            case EVENT.POSITION:
+            case EVENTS.POSITION:
                 this.eventPosition(data);
                 break;
-            case EVENT.LEAVE:
+            case EVENTS.LEAVE:
                 this.eventLeave(data);
                 break;
         }
@@ -110,30 +99,32 @@ class World {
     render(ctx) {
         if(this.player.keyStateChanged) {
             this.sendMessage({
-                event: EVENT.KEYS,
+                event: EVENTS.KEYS,
                 keyState: this.player.keyState,
             });
             this.player.keyStateChanged = false;
         }
 
         ctx.clearRect(-ctx.canvas.width / 2, -ctx.canvas.height / 2, ctx.canvas.width, ctx.canvas.height);
+        this.player.render(ctx);
+
+        ctx.save();
+        this.renderFloor(ctx);
+        this.players.forEach(player => player.render(ctx));
+        ctx.restore();
 
         // TODO: Don't clear the canvas/redraw more than necessary
-        this.players.forEach(player => player.render(ctx));
-        this.player.render(ctx);
+    }
+
+    renderFloor(ctx) {
+        ctx.fillRect(-ctx.canvas.width / 2, -this.player.position.y + ASSET_SCALE_FACTOR / 2, ctx.canvas.width, 20);
     }
 }
 
 class Player {
     static assets = {};
 
-    static async loadAssets() {
-        const assetsList = [
-            'fFallLeft', 'fFallRight', 'fIdleLeft', 'fIdleRight', 'fJumpLeft', 
-            'fJumpRight', 'fWalkLeft1', 'fWalkLeft2', 'fWalkLeft3', 'fWalkRight1',
-            'fWalkRight2', 'fWalkRight3',
-        ];
-
+    static async loadAssets(assetsList) {
         const assetLoad = assetsList.map(asset => {
             return new Promise((res, rej) => {
                 Player.assets[asset] = new Image();
@@ -146,17 +137,22 @@ class Player {
             });
         });
 
-        await Promise.all(assetLoad);
+        return Promise.all(assetLoad);
     }
 
     constructor() {
         this.position = new Vector(0, 0);
-        this.skin = 'fIdleRight';
+        this.skin = ASSET_PLAYER_IDLE_RIGHT;
     }
 
     render(ctx) {
-        const width = Player.assets[this.skin].width;
-        const height = Player.assets[this.skin].height;
+        const swidth = Player.assets[this.skin].width;
+        const sheight = Player.assets[this.skin].height;
+
+        const scale = Math.min(ASSET_SCALE_FACTOR / swidth, ASSET_SCALE_FACTOR / sheight);
+
+        const width = swidth * scale;
+        const height = sheight * scale;
 
         const x = -width / 2;
         const y = -height / 2;
@@ -219,12 +215,17 @@ class OnlinePlayer extends Player {
     }
 
     render(ctx) {
-        const width = Player.assets[this.skin].width;
-        const height = Player.assets[this.skin].height;
+        const swidth = Player.assets[this.skin].width;
+        const sheight = Player.assets[this.skin].height;
+
+        const scale = Math.min(ASSET_SCALE_FACTOR / swidth, ASSET_SCALE_FACTOR / sheight);
+
+        const width = swidth * scale;
+        const height = sheight * scale;
 
         // Offset this OnlinePlayer's position by the main player's position
-        const x = this.position.x - (width / 2) - this.relative.position.x;
-        const y = this.position.y - (height / 2) - this.relative.position.y;
+        const x = this.position.x - width / 2 - this.relative.position.x;
+        const y = this.position.y - height / 2 - this.relative.position.y;
 
         ctx.drawImage(Player.assets[this.skin], x, y, width, height);
     }
@@ -259,7 +260,7 @@ class Canvas {
 }
 
 (async function init() {
-    await Player.loadAssets();
+    await Player.loadAssets(ASSETS);
 
     const ws = new WebSocket(`ws://${window.location.hostname}:8081`);
 

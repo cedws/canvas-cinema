@@ -1,30 +1,20 @@
 'use strict';
 
-const Koa = require('koa');
-const WebSocket = require('ws');
-const { v4 } = require('uuid');
+import Koa from 'koa';
+import WebSocket from 'ws';
+import Serve from 'koa-static';
+import { v4 } from 'uuid';
 
 const app = new Koa();
-app.use(require('koa-static')('src/public'));
+app.use(Serve('src/public'));
+
+import { KEYS, EVENTS, ASSETS } from './public/js/consts.mjs';
 
 const wss = new WebSocket.Server({
     port: 8081,
 });
 
-const UPDATE_INTERVAL = 1000 / 60;
-
-const KEYS = {
-    UP: 38,
-    LEFT: 39,
-    RIGHT: 37,
-};
-
-const EVENT = {
-    KEYS: 0x1,
-    UUID: 0x2,
-    POSITION: 0x3,
-    LEAVE: 0x4,
-};
+const UPDATE_INTERVAL = 1000 / 144;
 
 class Vector {
     constructor(x, y) {
@@ -74,7 +64,7 @@ class Player {
 
         const variant = `${(Math.round(Math.abs(this.position.x) / 50) % 3) + 1}`;
 
-        this.skin = `f${verb()}${dir()}${this.walking ? variant : ""}`;
+        this.skin = `${verb()}${dir()}${this.walking ? variant : ""}`;
     }
 }
 
@@ -91,7 +81,7 @@ wss.on('connection', ws => {
         const { event } = data;
 
         switch(event) {
-            case EVENT.KEYS:
+            case EVENTS.KEYS:
                 const { keyState } = data;
                 const player = players.get(ws.uuid);
 
@@ -106,7 +96,7 @@ wss.on('connection', ws => {
         players.delete(ws.uuid);
 
         const data = JSON.stringify({
-            event: EVENT.LEAVE,
+            event: EVENTS.LEAVE,
             uuid: ws.uuid,
         });
 
@@ -122,13 +112,13 @@ wss.on('connection', ws => {
     })
 
     ws.send(JSON.stringify({
-        event: EVENT.UUID,
+        event: EVENTS.UUID,
         uuid: ws.uuid,
     }));
 
     {
         const data = JSON.stringify({
-            event: EVENT.POSITION,
+            event: EVENTS.POSITION,
             uuid: player.uuid,
             skin: player.skin,
             position: player.position,
@@ -147,7 +137,7 @@ wss.on('connection', ws => {
 
     players.forEach(({ uuid, skin, position }) => {
         const data = JSON.stringify({
-            event: EVENT.POSITION,
+            event: EVENTS.POSITION,
             uuid,
             skin,
             position,
@@ -196,7 +186,7 @@ function update() {
 
         // Gravity
         if(player.position.y != 0)
-            player.velocity.subtract(new Vector(0, -0.3));
+            player.velocity.subtract(new Vector(0, -0.5));
 
         // Friction
         player.velocity.x /= 1.2;
@@ -220,7 +210,7 @@ function update() {
 
     for(const { uuid, skin, position } of updated) {
         const data = JSON.stringify({
-            event: EVENT.POSITION,
+            event: EVENTS.POSITION,
             uuid,
             skin,
             position,
