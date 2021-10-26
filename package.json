@@ -7,7 +7,6 @@
     "start": "node src/app.mjs"
   },
   "author": "",
-  "license": "ISC",
   "type": "module",
   "dependencies": {
     "koa": "^2.11.0",
